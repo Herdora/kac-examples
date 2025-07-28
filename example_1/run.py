@@ -12,29 +12,10 @@ ITERS_PER_STEP = 5
 
 
 def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--steps", type=int, default=5, help="total profiler steps (>=3 recommended)"
-    )
-    parser.add_argument(
-        "--trace-dir",
-        type=str,
-        default=None,
-        help="output directory for traces (overrides TRACE_DIR env var)",
-    )
-    args = parser.parse_args()
+    # MANDATORY: Get trace_dir from environment variable (being passed from backend)
+    trace_dir = os.getenv("TRACE_DIR", "traces")
 
-    # ========================================
-    # MANDATORY ARGUMENTS FROM BACKEND
-    # ========================================
-    # Get trace_dir from args or environment variable
-    if args.trace_dir:
-        trace_dir = args.trace_dir
-    else:
-        trace_dir = os.getenv("TRACE_DIR", "traces")
-
-    steps = max(args.steps, 3)  # --steps: Total profiler steps
-    # ========================================
+    steps = 5
 
     cuda_available = torch.cuda.is_available()
     if cuda_available:

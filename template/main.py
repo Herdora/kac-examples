@@ -11,32 +11,8 @@ CONSTANT_2 = "default_value"
 
 
 def main():
-    parser = argparse.ArgumentParser()
-
-    # THESE ARE MANDATORY FROM BACKEND. DO NOT REMOVE.
-    # === BEGIN MANDATORY CODE ===
-    parser.add_argument(
-        "--steps", type=int, default=5, help="total profiler steps (>=3 recommended)"
-    )
-    parser.add_argument(
-        "--trace-dir",
-        type=str,
-        default=None,
-        help="output directory for traces (overrides TRACE_DIR env var)",
-    )
-    # === END MANDATORY CODE ===
-    args = parser.parse_args()
-
-    # THESE ARE MANDATORY FROM BACKEND. DO NOT REMOVE.
-    # === BEGIN MANDATORY CODE ===
-    # Get trace_dir from args or environment variable
-    if args.trace_dir:
-        trace_dir = args.trace_dir
-    else:
-        trace_dir = os.getenv("TRACE_DIR", "traces")
-
-    steps = max(args.steps, 3)  # --steps: Total profiler steps
-    # === END MANDATORY CODE ===
+    # MANDATORY: Get trace_dir from environment variable (being passed from backend)
+    trace_dir = os.getenv("TRACE_DIR", "traces")
 
     # Device setup
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -45,6 +21,7 @@ def main():
     run_id = uuid.uuid4().hex[:8]
     out_dir = Path(trace_dir).expanduser().resolve() / run_id
     out_dir.mkdir(parents=True, exist_ok=True)
+    steps = 5
 
     # ========================================
     # WORKLOAD SETUP
@@ -75,7 +52,7 @@ def main():
         activities.append(torch.profiler.ProfilerActivity.CUDA)
 
     # ========================================
-    # MAIN PROFILING LOOP
+    # MAIN PROFILING LOOP. MANDATORY.
     # ========================================
     with torch.profiler.profile(
         activities=activities,
