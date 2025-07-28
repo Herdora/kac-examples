@@ -1,6 +1,7 @@
 import os
 import time
 import uuid
+import traceback
 from pathlib import Path
 import torch
 import torch.nn as nn
@@ -47,7 +48,7 @@ def run_multi_gpu_profiling(rank, world_size, trace_dir, steps):
         # Initialize distributed training
         os.environ["MASTER_ADDR"] = "localhost"
         os.environ["MASTER_PORT"] = "12355"
-        
+
         # Use gloo backend as fallback if nccl fails in container
         try:
             dist.init_process_group("nccl", rank=rank, world_size=world_size)
@@ -55,68 +56,73 @@ def run_multi_gpu_profiling(rank, world_size, trace_dir, steps):
             print(f"NCCL failed, falling back to gloo: {e}")
             dist.init_process_group("gloo", rank=rank, world_size=world_size)
 
-    device = torch.device(f"cuda:{rank}")
-    torch.cuda.set_device(device)
+        device = torch.device(f"cuda:{rank}")
+        torch.cuda.set_device(device)
 
-    run_id = uuid.uuid4().hex[:8]
-    out_dir = Path(trace_dir).expanduser().resolve() / f"{run_id}_gpu_{rank}"
-    out_dir.mkdir(parents=True, exist_ok=True)
+        run_id = uuid.uuid4().hex[:8]
+        out_dir = Path(trace_dir).expanduser().resolve() / f"{run_id}_gpu_{rank}"
+        out_dir.mkdir(parents=True, exist_ok=True)
 
-    # Create a simple model for multi-GPU workload
-    model = nn.Sequential(
-        nn.Linear(HIDDEN_SIZE, HIDDEN_SIZE),
-        nn.ReLU(),
-        nn.Linear(HIDDEN_SIZE, HIDDEN_SIZE),
-        nn.ReLU(),
-        nn.Linear(HIDDEN_SIZE, HIDDEN_SIZE),
-    ).to(device)
+        # Create a simple model for multi-GPU workload
+        model = nn.Sequential(
+            nn.Linear(HIDDEN_SIZE, HIDDEN_SIZE),
+            nn.ReLU(),
+            nn.Linear(HIDDEN_SIZE, HIDDEN_SIZE),
+            nn.ReLU(),
+            nn.Linear(HIDDEN_SIZE, HIDDEN_SIZE),
+        ).to(device)
 
-    # Wrap model with DDP
-    model = nn.parallel.DistributedDataParallel(model, device_ids=[rank])
+        # Wrap model with DDP
+        model = nn.parallel.DistributedDataParallel(model, device_ids=[rank])
 
-    # Create input data
-    input_data = torch.randn(BATCH_SIZE, HIDDEN_SIZE, device=device)
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
-    criterion = nn.MSELoss()
+        # Create input data
+        input_data = torch.randn(BATCH_SIZE, HIDDEN_SIZE, device=device)
+        optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+        criterion = nn.MSELoss()
 
-    def workload():
-        model.train()
-        optimizer.zero_grad()
+        def workload():
+            model.train()
+            optimizer.zero_grad()
 
-        # Forward pass
-        output = model(input_data)
-        target = torch.randn_like(output)
-        loss = criterion(output, target)
+            # Forward pass
+            output = model(input_data)
+            target = torch.randn_like(output)
+            loss = criterion(output, target)
 
-        # Backward pass
-        loss.backward()
-        optimizer.step()
+            # Backward pass
+            loss.backward()
+            optimizer.step()
 
-        # Synchronize across GPUs
-        torch.cuda.synchronize()
+            # Synchronize across GPUs
+            torch.cuda.synchronize()
 
-    # Profiler setup
-    schedule = torch.profiler.schedule(wait=1, warmup=1, active=steps - 2)
-    activities = [torch.profiler.ProfilerActivity.CPU, torch.profiler.ProfilerActivity.CUDA]
+        # Profiler setup
+        schedule = torch.profiler.schedule(wait=1, warmup=1, active=steps - 2)
+        activities = [torch.profiler.ProfilerActivity.CPU, torch.profiler.ProfilerActivity.CUDA]
 
-    with torch.profiler.profile(
-        activities=activities,
-        schedule=schedule,
-        on_trace_ready=torch.profiler.tensorboard_trace_handler(str(out_dir)),
-        record_shapes=True,
-        profile_memory=True,
-        with_stack=True,
-    ) as prof:
-        for s in range(steps):
-            workload()
-            prof.step()
-            time.sleep(0.05)
+        with torch.profiler.profile(
+            activities=activities,
+            schedule=schedule,
+            on_trace_ready=torch.profiler.tensorboard_trace_handler(str(out_dir)),
+            record_shapes=True,
+            profile_memory=True,
+            with_stack=True,
+        ) as prof:
+            for s in range(steps):
+                workload()
+                prof.step()
+                time.sleep(0.05)
 
-    trace_files = list(out_dir.glob("*.pt.trace.json"))
-    print(f"GPU {rank}: Generated {len(trace_files)} trace files in: {out_dir}")
+        trace_files = list(out_dir.glob("*.pt.trace.json"))
+        print(f"GPU {rank}: Generated {len(trace_files)} trace files in: {out_dir}")
 
-    # Clean up distributed training
-    dist.destroy_process_group()
+    except Exception as e:
+        print(f"Error in multi-GPU profiling on rank {rank}: {e}")
+        traceback.print_exc()
+    finally:
+        # Clean up distributed training if initialized
+        if dist.is_initialized():
+            dist.destroy_process_group()
 
 
 def run_single_gpu_profiling(device_id, trace_dir, steps):
