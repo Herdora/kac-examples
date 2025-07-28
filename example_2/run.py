@@ -43,10 +43,17 @@ def main():
 
 def run_multi_gpu_profiling(rank, world_size, trace_dir, steps):
     """Run profiling on multiple GPUs using DDP"""
-    # Initialize distributed training
-    os.environ["MASTER_ADDR"] = "localhost"
-    os.environ["MASTER_PORT"] = "12355"
-    dist.init_process_group("nccl", rank=rank, world_size=world_size)
+    try:
+        # Initialize distributed training
+        os.environ["MASTER_ADDR"] = "localhost"
+        os.environ["MASTER_PORT"] = "12355"
+        
+        # Use gloo backend as fallback if nccl fails in container
+        try:
+            dist.init_process_group("nccl", rank=rank, world_size=world_size)
+        except Exception as e:
+            print(f"NCCL failed, falling back to gloo: {e}")
+            dist.init_process_group("gloo", rank=rank, world_size=world_size)
 
     device = torch.device(f"cuda:{rank}")
     torch.cuda.set_device(device)
