@@ -48,6 +48,7 @@ def main():
     b = torch.randn(size, size, device=device, dtype=torch.float16)
 
     def workload(n_iters: int):
+        print("TESTING TESTING LOGS")
         with torch.no_grad():
             c = a
             for _ in range(n_iters):
