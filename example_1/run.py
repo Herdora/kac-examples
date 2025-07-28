@@ -1,5 +1,6 @@
 # sample_profiler.py
 import argparse
+import os
 import time
 import uuid
 from pathlib import Path
@@ -18,15 +19,20 @@ def main():
     parser.add_argument(
         "--trace-dir",
         type=str,
-        required=True,
-        help="output directory for traces (mandatory from backend)",
+        default=None,
+        help="output directory for traces (overrides TRACE_DIR env var)",
     )
     args = parser.parse_args()
 
     # ========================================
     # MANDATORY ARGUMENTS FROM BACKEND
     # ========================================
-    trace_dir = args.trace_dir  # --trace-dir: Output directory for traces
+    # Get trace_dir from args or environment variable
+    if args.trace_dir:
+        trace_dir = args.trace_dir
+    else:
+        trace_dir = os.getenv("TRACE_DIR", "traces")
+
     steps = max(args.steps, 3)  # --steps: Total profiler steps
     # ========================================
 
